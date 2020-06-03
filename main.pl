@@ -1,6 +1,5 @@
 :- use_module(library(http/websocket)).
 :- use_module(library(http/json)).
-:- use_module(library(term_to_json)).
 
 bot_token(Token):-
     getenv("DISCORDPL_TOKEN", Token).
