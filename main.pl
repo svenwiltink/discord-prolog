@@ -37,7 +37,7 @@ send_identify(WS):-
 
 websocket_loop(Client):-
     format("running loop\n"),
-    (wait_for_input([Client.ws], [Da], 5)
+    (wait_for_input([Client.ws], [Da], 1)
     ->  ws_receive(Da, Msg, [format(json)]),
         format("received data: ~w\n", [Msg.data]),
         handle_json(Client, Msg.data, NewClient)
@@ -60,20 +60,40 @@ handle_json(Client, O, Client):-
 handle_json(Client, O, NewClient):-
     O.op = 0,
     NewClient = Client.put([lastSequence=O.s]),
-    format("Received event: ~w\n", O.t).
+    format("Received event: ~w\n", O.t),
+    call_handlers(Client, Client.handlers, O).
 
 handle_json(Client, O, Client):-
     format("discarding data for op ~p\n~p\n", [O.op, O]).
 
+call_handlers(_, [], _).
+
+call_handlers(Client, [H|T], Event):-
+    call(H, Client, Event),
+    call_handlers(Client, T, Event).
+
+client_create(Client):-
+    Client = client{handlers: [], lastSequence: null}.
+
+client_add_handler(Client, Handler, NewClient):-
+    NewHandlers = [Handler|Client.handlers],
+    NewClient = Client.put([handlers=NewHandlers]).
+
+custom_handler(_, Data):-
+    format("Custom handler received data: ~p\n", [Data]).
+
 :-
+    client_create(Client),
+    client_add_handler(Client, custom_handler, ClientWithHandler),
+
     gateway_url(URL),
     http_open_websocket(URL, WS, []),
     set_stream(WS, timeout(60)),
 
-    Client = client{ws: WS, lastSequence: null},
+    ClientWithSocket = ClientWithHandler.put([ws: WS]),
 
-    ws_receive(Client.ws, Reply, [format(json)]),
-    handle_json(Client, Reply.data, NewClient),
+    ws_receive(ClientWithSocket.ws, Reply, [format(json)]),
+    handle_json(ClientWithSocket, Reply.data, NewClient),
 
     send_identify(NewClient.ws),
     websocket_loop(NewClient),
