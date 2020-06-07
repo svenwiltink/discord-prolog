@@ -7,14 +7,12 @@ bot_token(Token):-
 gateway_url("wss://gateway.discord.gg/?v=6&encoding=json").
 
 send_heartbeat(Client, UpdatedClient):-
-    format("checking for heartbeat\n"),
-
     get_time(CurrentTime),
     TimeDiff is CurrentTime - Client.lastHeartBeat,
     format("Time since last heartbeat: ~p\n", [TimeDiff]),
     (TimeDiff > (Client.heartBeatInterval/1000)
     ->  format("time to send a heartbeat\n"),
-        atom_json_term(Data, json([op=1, d=null]), []),
+        atom_json_term(Data, json([op=1, d=Client.lastSequence]), []),
         ws_send(Client.ws, text(Data)),
         UpdatedClient = Client.put([lastHeartBeat=CurrentTime])
     ;   UpdatedClient = Client
@@ -53,28 +51,26 @@ handle_json(Client, O, UpdatedClient):-
     O.op = 10,
     format("hello received\n"),
     get_time(Time),
-    UpdatedClient = Client.put([lastHeartBeat=Time,heartBeatInterval=O.d.heartbeat_interval]),
-    format("Client: ~w\n", [UpdatedClient]),
-    format("~p\n", [O.d]).
+    UpdatedClient = Client.put([lastHeartBeat=Time,heartBeatInterval=O.d.heartbeat_interval]).
 
 handle_json(Client, O, Client):-
     O.op = 11,
     format("heartbeat received\n").
 
-handle_json(Client, O, Client):-
+handle_json(Client, O, NewClient):-
     O.op = 0,
+    NewClient = Client.put([lastSequence=O.s]),
     format("Received event: ~w\n", O.t).
 
 handle_json(Client, O, Client):-
     format("discarding data for op ~p\n~p\n", [O.op, O]).
 
 :-
-    debug,
     gateway_url(URL),
     http_open_websocket(URL, WS, []),
     set_stream(WS, timeout(60)),
 
-    Client = client{ws: WS},
+    Client = client{ws: WS, lastSequence: null},
 
     ws_receive(Client.ws, Reply, [format(json)]),
     handle_json(Client, Reply.data, NewClient),
