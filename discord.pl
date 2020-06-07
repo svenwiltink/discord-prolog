@@ -1,9 +1,6 @@
 :- use_module(library(http/websocket)).
 :- use_module(library(http/json)).
 
-bot_token(Token):-
-    getenv("DISCORDPL_TOKEN", Token).
-
 gateway_url("wss://gateway.discord.gg/?v=6&encoding=json").
 
 send_heartbeat(Client, UpdatedClient):-
@@ -18,12 +15,11 @@ send_heartbeat(Client, UpdatedClient):-
     ;   UpdatedClient = Client
     ).
 
-send_identify(WS):-
-    bot_token(Token),
+send_identify(Client):-
     atom_json_term(Data, json([
         op=2,
         d=json([
-            token=Token,
+            token=Client.token,
             properties=json([
                 os='Linux',
                 browser='powered-by-prolog',
@@ -33,7 +29,7 @@ send_identify(WS):-
     ]), []),
 
     format("sending identify: ~w\n", [Data]),
-    ws_send(WS, text(Data)).
+    ws_send(Client.ws, text(Data)).
 
 websocket_loop(Client):-
     format("running loop\n"),
@@ -74,14 +70,14 @@ call_handlers(Client, [H|T], Event):-
     ;  call_handlers(Client, T, Event)
     ).
 
-client_create(Client):-
-    Client = client{handlers: [], lastSequence: null}.
+discord_client_create(Token, Client):-
+    Client = client{token: Token, handlers: [], lastSequence: null}.
 
-client_add_handler(Client, Handler, NewClient):-
+discord_client_add_handler(Client, Handler, NewClient):-
     NewHandlers = [Handler|Client.handlers],
     NewClient = Client.put([handlers=NewHandlers]).
 
-client_run(Client):-
+discord_client_run(Client):-
     gateway_url(URL),
     http_open_websocket(URL, WS, []),
     set_stream(WS, timeout(60)),
@@ -91,5 +87,5 @@ client_run(Client):-
     ws_receive(ClientWithSocket.ws, Reply, [format(json)]),
     handle_json(ClientWithSocket, Reply.data, NewClient),
 
-    send_identify(NewClient.ws),
+    send_identify(NewClient),
     websocket_loop(NewClient).
