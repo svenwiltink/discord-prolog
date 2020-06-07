@@ -6,16 +6,22 @@ bot_token(Token):-
 
 gateway_url("wss://gateway.discord.gg/?v=6&encoding=json").
 
-send_heartbeat(WS):-
-    format("sending heartbeat\n"),
-    atom_json_term(Data, json([op=1, d=null]), []),
-    ws_send(WS, text(Data)).
+send_heartbeat(Client, UpdatedClient):-
+    format("checking for heartbeat\n"),
+
+    get_time(CurrentTime),
+    TimeDiff is CurrentTime - Client.lastHeartBeat,
+    format("Time since last heartbeat: ~p\n", [TimeDiff]),
+    (TimeDiff > (Client.heartBeatInterval/1000)
+    ->  format("time to send a heartbeat\n"),
+        atom_json_term(Data, json([op=1, d=null]), []),
+        ws_send(Client.ws, text(Data)),
+        UpdatedClient = Client.put([lastHeartBeat=CurrentTime])
+    ;   UpdatedClient = Client
+    ).
 
 send_identify(WS):-
-    format("sending identify\n"),
     bot_token(Token),
-
-
     atom_json_term(Data, json([
         op=2,
         d=json([
@@ -28,30 +34,39 @@ send_identify(WS):-
         ])
     ]), []),
 
-    print(Data),
+    format("sending identify: ~w\n", [Data]),
     ws_send(WS, text(Data)).
 
 websocket_loop(Client):-
     format("running loop\n"),
-    (wait_for_input([Client.ws], [Da], 5) ->
-        ws_receive(Da, Msg, [format(json)]),
+    (wait_for_input([Client.ws], [Da], 5)
+    ->  ws_receive(Da, Msg, [format(json)]),
         format("received data: ~w\n", [Msg.data]),
-        handle_json(Msg.data)
-        ; format("no data received\n")
+        handle_json(Client, Msg.data, NewClient)
+    ;   format("no data received\n"),
+        NewClient = Client
     ),
-    send_heartbeat(Client.ws),
-    websocket_loop(Client).
+    send_heartbeat(NewClient, NewClient2),
+    websocket_loop(NewClient2).
 
-handle_json(O):-
+handle_json(Client, O, UpdatedClient):-
+    O.op = 10,
+    format("hello received\n"),
+    get_time(Time),
+    UpdatedClient = Client.put([lastHeartBeat=Time,heartBeatInterval=O.d.heartbeat_interval]),
+    format("Client: ~w\n", [UpdatedClient]),
+    format("~p\n", [O.d]).
+
+handle_json(Client, O, Client):-
     O.op = 11,
     format("heartbeat received\n").
 
-handle_json(O):-
+handle_json(Client, O, Client):-
     O.op = 0,
     format("Received event: ~w\n", O.t).
 
-handle_json(O):-
-    format("discarding data for op ~p", O.op).
+handle_json(Client, O, Client):-
+    format("discarding data for op ~p\n~p\n", [O.op, O]).
 
 :-
     debug,
@@ -62,8 +77,8 @@ handle_json(O):-
     Client = client{ws: WS},
 
     ws_receive(Client.ws, Reply, [format(json)]),
-    handle_json(Reply.data),
+    handle_json(Client, Reply.data, NewClient),
 
-    send_identify(Client.ws),
-    websocket_loop(Client),
+    send_identify(NewClient.ws),
+    websocket_loop(NewClient),
     halt.
