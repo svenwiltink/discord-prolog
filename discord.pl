@@ -2,6 +2,11 @@
 :- use_module(library(http/json)).
 
 gateway_url("wss://gateway.discord.gg/?v=6&encoding=json").
+discord_endpoint("https://discord.com/api/v6").
+
+discord_endpoint_messages(Url, ChannelId):-
+    discord_endpoint(Endpoint),
+    format(atom(Url), "~w/channels/~w/messages", [Endpoint, ChannelId]).
 
 send_heartbeat(Client, UpdatedClient):-
     get_time(CurrentTime),
@@ -65,7 +70,7 @@ handle_json(Client, O, Client):-
 call_handlers(_, [], _).
 
 call_handlers(Client, [H|T], Event):-
-    (call(H, Client, Event.t, Event)
+    (call(H, Client, Event.t, Event.d)
     -> call_handlers(Client, T, Event)
     ;  call_handlers(Client, T, Event)
     ).
@@ -76,6 +81,21 @@ discord_client_create(Token, Client):-
 discord_client_add_handler(Client, Handler, NewClient):-
     NewHandlers = [Handler|Client.handlers],
     NewClient = Client.put([handlers=NewHandlers]).
+
+discord_message_create(Client, ChannelId, Message, ResponseMsg):-
+    atom_json_term(Payload, json([
+        content=Message
+    ]), []),
+
+    discord_endpoint_messages(URL, ChannelId),
+    http_post(
+        URL,
+        atom("application/json", Payload),
+        Response, [
+        request_header("Authorization"=Client.token)
+    ]),
+
+    atom_json_dict(Response, ResponseMsg, []).
 
 discord_client_run(Client):-
     gateway_url(URL),
